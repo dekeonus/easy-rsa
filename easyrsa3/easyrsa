@@ -456,6 +456,8 @@ General options:
 -s|--silent     : Disable all Warnings and Notices
 --sbatch        : Combined --silent and --batch operating mode
 -q|--quiet      : Quiet mode, disable information messages only
+--log-level=LVL : Console Log level (overides --silent and --quiet)
+                  LVL = err, warning, notice, info, debug
 
 --passin=ARG    : set -passin ARG for openssl (eg: pass:xEasyRSAy)
 --passout=ARG   : set -passout ARG for openssl (eg: pass:xEasyRSAy)
@@ -533,6 +535,7 @@ $1" 1>&2
 # non-fatal warning output
 warn() {
 	[ "$EASYRSA_SILENT" ] && return
+	[ "$EASYRSA_LOGLVL" ] && [ "$EASYRSA_LOGLVL" -lt "4" ] && return
 	print "
 WARNING
 =======
@@ -544,6 +547,7 @@ $1
 notice() {
 	[ "$EASYRSA_SILENT" ] && return
 	[ "$EASYRSA_BATCH" ] && return
+	[ "$EASYRSA_LOGLVL" ] && [ "$EASYRSA_LOGLVL" -lt "5" ] && return
 	print "
 Notice
 ------
@@ -556,9 +560,20 @@ information() {
 	[ "$EASYRSA_SILENT" ] && return
 	[ "$EASYRSA_BATCH" ] && return
 	[ "$EASYRSA_QUIET" ] && return
+	[ "$EASYRSA_LOGLVL" ] && [ "$EASYRSA_LOGLVL" -lt "6" ] && return
 	print "* $1
 "
-} # => notice()
+} # => information()
+
+# user level debug information
+udebug() {
+	[ "$EASYRSA_SILENT" ] && return
+	[ "$EASYRSA_BATCH" ] && return
+	[ "$EASYRSA_QUIET" ] && return
+	[ "$EASYRSA_LOGLVL" ] && [ "$EASYRSA_LOGLVL" -lt "7" ] && return
+	print "debug: $1
+"
+} # => udebug()
 
 # yes/no case-insensitive match (operates on stdin pipe)
 # Returns 0 when input contains yes, 1 for no, 2 for no match
@@ -3915,6 +3930,16 @@ Sourcing the vars file and building certificates will probably fail ..'
 
 	set_var EASYRSA_KDC_REALM		"CHANGEME.EXAMPLE.COM"
 
+	# set default log-level
+	case "${EASYRSA_version}" in
+		git-*)
+			set_log_level "debug" ;;
+		[~]VER[~]) #git version and/or packager not updating string
+			set_log_level "info" ;;
+		*)
+			set_log_level "notice"
+	esac
+
 	# Find x509-types but do not fail - Not fatal here
 	find_x509_types_dir || :
 
@@ -4611,6 +4636,31 @@ Source Repo: https://github.com/OpenVPN/easy-rsa${EASYRSA_DEBUG+
 VERSION_TEXT
 } # => print_version ()
 
+# convert log-level keyword to numerical level
+set_log_level()
+{
+	case "$1" in
+		emerg) easyrsa_log_lvl=0 ;; #not used
+		panic) easyrsa_log_lvl=0 ;; #deprecated
+		alert) easyrsa_log_lvl=1 ;; #not used
+		crit) easyrsa_log_lvl=2 ;; #not used
+		err) easyrsa_log_lvl=3 ;; #ALWAYS enabled
+		error) easyrsa_log_lvl=3 ;; #deprecated
+		warning) easyrsa_log_lvl=4 ;;
+		warn) easyrsa_log_lvl=4 ;; #deprecated
+		notice) easyrsa_log_lvl=5 ;;
+		info) easyrsa_log_lvl=6 ;;
+		information) easyrsa_log_lvl=6 ;; #non-standard
+		informational) easyrsa_log_lvl=6 ;; #non-standard
+		debug) easyrsa_log_lvl=7 ;; #NOTE does NOT enable shell tracing
+		(*[!1234567890]*) print "Invalid log-level: '$1'"
+			exit 1 ;;
+		*) easyrsa_log_lvl=$1 ;; #only case left is pure digits
+	esac
+	set_var EASYRSA_LOGLVL "$easyrsa_log_lvl"
+	#export EASYRSA_LOGLVL="$easyrsa_log_lvl"
+	unset -v easyrsa_log_lvl
+} # => set_log_level()
 
 ########################################
 # Invocation entry point:
@@ -4637,7 +4687,7 @@ detect_host
 
 # Initialisation requirements
 unset -v easyrsa_error_exit user_san_true user_vars_true \
-	alias_days
+	alias_days have_cli_silent have_cli_quiet
 
 # Parse options
 while :; do
@@ -4727,14 +4777,19 @@ while :; do
 		export EASYRSA_BATCH=1 ;;
 	-s|--silent)
 		empty_ok=1
+		have_cli_silent=1
 		export EASYRSA_SILENT=1 ;;
 	--sbatch|--silent-batch)
 		empty_ok=1
+		have_cli_silent=1
 		export EASYRSA_SILENT=1
 		export EASYRSA_BATCH=1 ;;
 	-q|--quiet)
 		empty_ok=1
+		have_cli_quiet=1
 		export EASYRSA_QUIET=1 ;;
+	--log-level)
+		set_log_level "$val" ;;
 	--passin)
 		export EASYRSA_PASSIN="$val";;
 	--passout)
@@ -4775,6 +4830,21 @@ subjectAltName = $val"
 
 	shift
 done
+
+if [ -z "${EASYRSA_LOGLVL}" ]; then
+	if [ "$have_cli_silent" ]; then
+		set_log_level "err"
+	elif [ "$have_cli_quiet" ]; then
+		set_log_level "notice"
+	fi
+	unset -v have_cli_quiet have_cli_silent
+fi
+
+#Testing
+if [ "${EASYRSA_LOGLVL}" ]; then
+	[ "${EASYRSA_LOGLVL}" -lt "6" ] || unset -v EASYRSA_QUIET
+	[ "${EASYRSA_LOGLVL}" -lt "4" ] || unset -v EASYRSA_SILENT
+fi
 
 # Set cmd now because vars_setup needs to know if this is init-pki
 cmd="$1"
