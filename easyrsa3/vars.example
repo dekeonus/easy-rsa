@@ -179,6 +179,10 @@ fi
 #alias awk="/alt/bin/awk"
 #alias cat="/alt/bin/cat"
 
+# The default log message level, uses syslog keywords or numeric level.
+# higher numbers are more verbose.
+#set_var EASYRSA_DEFAULT_LOGLEVEL	"notice"
+
 # X509 extensions directory:
 # If you want to customize the X509 extensions used, set the directory to look
 # for extensions here. Each cert type you sign must have a matching filename,

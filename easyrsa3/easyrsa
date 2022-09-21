@@ -3933,12 +3933,14 @@ Sourcing the vars file and building certificates will probably fail ..'
 	# set default log-level
 	case "${EASYRSA_version}" in
 		git-*)
-			set_log_level "debug" ;;
+			set_var EASYRSA_DEFAULT_LOGLEVEL "debug" ;;
 		[~]VER[~]) #git version and/or packager not updating string
-			set_log_level "info" ;;
+			set_var EASYRSA_DEFAULT_LOGLEVEL "info" ;;
 		*)
-			set_log_level "notice"
+			set_var EASYRSA_DEFAULT_LOGLEVEL "notice"
 	esac
+	# if log-level unset, set it to default log-level
+	[ "$EASYRSA_LOGLVL" ] || set_log_level "$EASYRSA_DEFAULT_LOGLEVEL"
 
 	# Find x509-types but do not fail - Not fatal here
 	find_x509_types_dir || :
@@ -4017,6 +4019,31 @@ set_var() {
 	value="$*"
 	eval "export $var=\"\${$var-$value}\""
 } #=> set_var()
+
+# convert log-level keyword to numerical level
+set_log_level()
+{
+	case "$1" in
+		emerg) easyrsa_log_lvl=0 ;; #not used
+		panic) easyrsa_log_lvl=0 ;; #deprecated
+		alert) easyrsa_log_lvl=1 ;; #not used
+		crit) easyrsa_log_lvl=2 ;; #not used
+		err) easyrsa_log_lvl=3 ;; #ALWAYS enabled
+		error) easyrsa_log_lvl=3 ;; #deprecated
+		warning) easyrsa_log_lvl=4 ;;
+		warn) easyrsa_log_lvl=4 ;; #deprecated
+		notice) easyrsa_log_lvl=5 ;;
+		info) easyrsa_log_lvl=6 ;;
+		information) easyrsa_log_lvl=6 ;; #non-standard
+		informational) easyrsa_log_lvl=6 ;; #non-standard
+		debug) easyrsa_log_lvl=7 ;; #NOTE does NOT enable shell tracing
+		(*[!1234567890]*) print "Invalid log-level: '$1'"
+			exit 1 ;;
+		*) easyrsa_log_lvl=$1 ;; #only case left is pure digits
+	esac
+	export EASYRSA_LOGLVL="$easyrsa_log_lvl"
+	unset -v easyrsa_log_lvl
+} # => set_log_level()
 
 
 
@@ -4636,31 +4663,6 @@ Source Repo: https://github.com/OpenVPN/easy-rsa${EASYRSA_DEBUG+
 VERSION_TEXT
 } # => print_version ()
 
-# convert log-level keyword to numerical level
-set_log_level()
-{
-	case "$1" in
-		emerg) easyrsa_log_lvl=0 ;; #not used
-		panic) easyrsa_log_lvl=0 ;; #deprecated
-		alert) easyrsa_log_lvl=1 ;; #not used
-		crit) easyrsa_log_lvl=2 ;; #not used
-		err) easyrsa_log_lvl=3 ;; #ALWAYS enabled
-		error) easyrsa_log_lvl=3 ;; #deprecated
-		warning) easyrsa_log_lvl=4 ;;
-		warn) easyrsa_log_lvl=4 ;; #deprecated
-		notice) easyrsa_log_lvl=5 ;;
-		info) easyrsa_log_lvl=6 ;;
-		information) easyrsa_log_lvl=6 ;; #non-standard
-		informational) easyrsa_log_lvl=6 ;; #non-standard
-		debug) easyrsa_log_lvl=7 ;; #NOTE does NOT enable shell tracing
-		(*[!1234567890]*) print "Invalid log-level: '$1'"
-			exit 1 ;;
-		*) easyrsa_log_lvl=$1 ;; #only case left is pure digits
-	esac
-	set_var EASYRSA_LOGLVL "$easyrsa_log_lvl"
-	#export EASYRSA_LOGLVL="$easyrsa_log_lvl"
-	unset -v easyrsa_log_lvl
-} # => set_log_level()
 
 ########################################
 # Invocation entry point:
@@ -4838,12 +4840,6 @@ if [ -z "${EASYRSA_LOGLVL}" ]; then
 		set_log_level "notice"
 	fi
 	unset -v have_cli_quiet have_cli_silent
-fi
-
-#Testing
-if [ "${EASYRSA_LOGLVL}" ]; then
-	[ "${EASYRSA_LOGLVL}" -lt "6" ] || unset -v EASYRSA_QUIET
-	[ "${EASYRSA_LOGLVL}" -lt "4" ] || unset -v EASYRSA_SILENT
 fi
 
 # Set cmd now because vars_setup needs to know if this is init-pki
