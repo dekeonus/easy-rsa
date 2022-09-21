@@ -536,10 +536,16 @@ $1" 1>&2
 warn() {
 	[ "$EASYRSA_SILENT" ] && return
 	[ "$EASYRSA_LOGLVL" ] && [ "$EASYRSA_LOGLVL" -lt "4" ] && return
-	print "
+	unset -v log_hdr
+	if [ "$2" = "nohdr" ]; then
+		log_hdr="% "
+	else
+		log_hdr="
 WARNING
 =======
-$1
+"
+	fi
+	print "${log_hdr}$1
 " 1>&2
 } # => warn()
 
@@ -548,10 +554,16 @@ notice() {
 	[ "$EASYRSA_SILENT" ] && return
 	[ "$EASYRSA_BATCH" ] && return
 	[ "$EASYRSA_LOGLVL" ] && [ "$EASYRSA_LOGLVL" -lt "5" ] && return
-	print "
+	unset -v log_hdr
+	if [ "$2" = "nohdr" ]; then
+		log_hdr="+ "
+	else
+		log_hdr="
 Notice
 ------
-$1
+"
+	fi
+	print "${log_hdr}$1
 "
 } # => notice()
 
