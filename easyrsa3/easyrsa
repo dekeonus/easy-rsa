@@ -1665,6 +1665,10 @@ Missing X509-type 'COMMON'"
 	[ "$crt_type" != COMMON ] || die "\
 Invalid certificate type: '$crt_type'"
 
+	# Cert type must NOT be a raw extension
+	[ "${crt_type}" = "${crt_type%.raw}" ] || die "\
+Invalid certificate type (raw extension): '$crt_type'"
+
 	# Request file must exist
 	[ -e "$req_in" ] || die "\
 No request found for the input: '$2'
@@ -1679,6 +1683,13 @@ at: $crt_out"
 	verify_file req "$req_in" || die "\
 The certificate request file is not in a valid X509 request format.
 File Path: $req_in"
+
+	# SAN in x509-type and from cli, unlikely to be intended.
+	if [ "$user_san_true" ] && grep -q '^[[:blank:]]*subjectAltName[[:blank:]]*=' \
+		"$EASYRSA_EXT_DIR/$crt_type"; then
+		die "\
+subjectAlternateName set by X509-type $crt_type and also set on command line"
+	fi
 
 	# Display the request subject in an easy-to-read format
 	# Confirm the user wishes to sign this request
@@ -1735,6 +1746,33 @@ Please update openssl-easyrsa.cnf to the latest official release."
 		EASYRSA_SSL_CONF="$conf_tmp"
 	fi
 
+	# shellcheck disable=SC2016 # vars don't expand in single quotes
+	awkscript='{sub(/(^[[:blank:]]*#.*|^.*=[[:blank:]]*)/,"");
+split($0,extnVal,","); for(i in extnVal)
+ {if (extnVal[i] ~ /^[[:blank:]]*@[[:alnum:]_]*[[:blank:]]*$/)
+  { gsub(/([[:blank:]]|@)/,"",extnVal[i]); print extnVal[i] }
+ } }'
+	# test for raw extensions ie @section_name in x509-types
+	raw_types="$(awk "${awkscript}" "$EASYRSA_EXT_DIR/COMMON" \
+		"$EASYRSA_EXT_DIR/$crt_type")"
+	if [ -n "$raw_types" ]; then
+		extraw_tmp="$(easyrsa_mktemp)" || die "Failed to create temporary file"
+		for raw_ext in $raw_types; do
+			[ -e "$EASYRSA_EXT_DIR/$raw_ext.raw" ] || die "\
+Missing X509 raw extension file '$raw_ext.raw'"
+			cat "$EASYRSA_EXT_DIR/$raw_ext.raw" >> "${extraw_tmp}"
+		done
+		# shellcheck disable=SC2013 # to read lines rather than words, pipe to while read loop
+		for eusr_var in $(sed -n -e 's/.*{ENV::\(.*\)}.*/\1/p' "${extraw_tmp}"); do
+			[ -n "$(eval "print \${$eusr_var}")" ] || die "\
+User variable $eusr_var was unset"
+			# -i is inconsistent, redirect and mv
+			sed -e "s/\${ENV::$eusr_var}/$(eval "print \${$eusr_var}")/" \
+				"${extraw_tmp}" > "${extraw_tmp}.work"
+			mv "${extraw_tmp}.work" "${extraw_tmp}"
+		done
+		unset -v raw_ext eusr_var
+	fi
 	# Generate the extensions file for this cert:
 	ext_tmp="$(easyrsa_mktemp)" || die "Failed to create temporary file"
 	{
@@ -1782,6 +1820,7 @@ Please update openssl-easyrsa.cnf to the latest official release."
 			# Add any advanced extensions supplied by env-var:
 			[ -z "$EASYRSA_EXTRA_EXTS" ] || print "$EASYRSA_EXTRA_EXTS"
 		fi
+		[ -e "${extraw_tmp}" ] && cat "${extraw_tmp}"
 	} > "$ext_tmp" || die "\
 Failed to create temp extension file (bad permissions?) at:
 $ext_tmp"
